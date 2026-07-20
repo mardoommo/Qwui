@@ -1,8 +1,15 @@
 import React, { useState, useEffect } from "react";
 import logoImg from "./assets/logo.png";
+import QRCode from "qrcode";
 import QrBillDocument from "./QrBillDocument.jsx";
 import BuchhaltungTab from "./BuchhaltungTab.jsx";
-import { isValidSwissIban } from "./qrbill.js";
+import { generateReceiptPdf } from "./pdfGenerator.js";
+import {
+  isValidSwissIban,
+  buildSwissQrPayload,
+  buildCreditorReference,
+  formatReferenceDisplay,
+} from "./qrbill.js";
 import {
   Plus,
   Trash2,
@@ -365,6 +372,91 @@ export default function ReceiptApp() {
     };
     window.addEventListener("afterprint", restoreTitle);
     window.print();
+  }
+
+  const [generatingPdf, setGeneratingPdf] = useState(false);
+
+  function dataUrlToUint8Array(dataUrl) {
+    const base64 = dataUrl.split(",")[1];
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+
+  async function downloadPdf() {
+    if (!currentReceipt) return;
+    setGeneratingPdf(true);
+    try {
+      let qrPngBytes = null;
+      let referenceDisplay = "";
+      let qrIban = "";
+      let qrCreditor = {};
+
+      if (currentReceipt.qrBillEnabled) {
+        const co = currentReceipt.company || {};
+        const qr = co.qrBill || {};
+        qrIban = qr.iban || "";
+        qrCreditor = {
+          name: qr.name || co.name,
+          street: qr.street,
+          houseNumber: qr.houseNumber,
+          postalCode: qr.postalCode,
+          city: qr.city,
+          country: qr.country || "CH",
+        };
+        const customer = currentReceipt.customer || {};
+        const debtor =
+          customer.name && customer.postalCode && customer.city
+            ? {
+                name: customer.name,
+                street: customer.street,
+                houseNumber: customer.houseNumber,
+                postalCode: customer.postalCode,
+                city: customer.city,
+                country: customer.country || "CH",
+              }
+            : null;
+
+        const payload = buildSwissQrPayload({
+          iban: qrIban,
+          creditor: qrCreditor,
+          amount: currentReceipt.total,
+          currency: "CHF",
+          debtor,
+          referenceText: currentReceipt.number,
+          message: `Quittung Nr. ${currentReceipt.number}`,
+        });
+
+        const creditorReference = buildCreditorReference(currentReceipt.number);
+        referenceDisplay = formatReferenceDisplay(creditorReference);
+
+        const dataUrl = await QRCode.toDataURL(payload, {
+          errorCorrectionLevel: "M",
+          margin: 0,
+          width: 480,
+          color: { dark: "#000000", light: "#ffffff" },
+        });
+        qrPngBytes = dataUrlToUint8Array(dataUrl);
+      }
+
+      const enrichedReceipt = { ...currentReceipt, referenceDisplay, qrIban, qrCreditor };
+      const pdfBytes = await generateReceiptPdf(enrichedReceipt, qrPngBytes);
+      const blob = new Blob([pdfBytes], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Quittung_${currentReceipt.number}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (err) {
+      console.error(err);
+      alert(`PDF-Erzeugung fehlgeschlagen: ${err.message}\n\nBitte nutze stattdessen 'Drucken'.`);
+    } finally {
+      setGeneratingPdf(false);
+    }
   }
 
   function buildWhatsAppText(receipt) {
@@ -958,8 +1050,11 @@ export default function ReceiptApp() {
               />
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button onClick={downloadPdf} style={styles.secondaryBtn} disabled={generatingPdf}>
+                <Printer size={14} /> {generatingPdf ? "Erstelle PDF…" : "PDF herunterladen"}
+              </button>
               <button onClick={printReceipt} style={styles.secondaryBtn}>
-                <Printer size={14} /> Drucken / Als PDF speichern
+                Drucken
               </button>
               <button
                 onClick={sendMail}
@@ -991,8 +1086,8 @@ export default function ReceiptApp() {
           </div>
           <div className="no-print" style={{ ...styles.hint, maxWidth: 640, margin: "0 auto 8px" }}>
             Hinweis: „Per E-Mail senden" öffnet dein E-Mail-Programm mit vorausgefülltem Text. Da Browser aus
-            Sicherheitsgründen keine automatischen Anhänge erlauben, speichere die Quittung zuerst als PDF
-            („Drucken / Als PDF speichern" → Ziel „Als PDF speichern") und hänge sie manuell an.
+            Sicherheitsgründen keine automatischen Anhänge erlauben, lade die Quittung zuerst über den Button
+            „PDF herunterladen" herunter und hänge sie manuell an.
           </div>
           <div className="no-print" style={{ ...styles.hint, maxWidth: 640, margin: "0 auto 20px" }}>
             Hinweis: „Per WhatsApp senden" öffnet WhatsApp (App oder WhatsApp Web) mit fertig
@@ -1004,7 +1099,7 @@ export default function ReceiptApp() {
           <ReceiptDocument receipt={currentReceipt} />
           {currentReceipt.qrBillEnabled && (
             <div className="no-print" style={{ textAlign: "center", margin: "16px 0" }}>
-              <span style={styles.docMuted}>↓ QR-Rechnung — wird beim Drucken auf der zweiten Seite mit ausgegeben</span>
+              <span style={styles.docMuted}>↓ QR-Rechnung — wird sowohl beim PDF-Download als auch beim Drucken mit ausgegeben</span>
             </div>
           )}
           {currentReceipt.qrBillEnabled && <QrBillDocument receipt={currentReceipt} />}
