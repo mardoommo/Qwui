@@ -367,35 +367,6 @@ export default function ReceiptApp() {
     window.print();
   }
 
-  const [generatingPdf, setGeneratingPdf] = useState(false);
-
-  async function downloadServerPdf() {
-    if (!currentReceipt) return;
-    setGeneratingPdf(true);
-    try {
-      const res = await fetch("/api/generate-pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(currentReceipt),
-      });
-      if (!res.ok) throw new Error(`PDF-Erzeugung fehlgeschlagen: ${res.status}`);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `Quittung_${currentReceipt.number}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-    } catch (err) {
-      console.error(err);
-      alert("PDF-Erzeugung fehlgeschlagen. Bitte versuche es erneut oder nutze 'Drucken'.");
-    } finally {
-      setGeneratingPdf(false);
-    }
-  }
-
   function buildWhatsAppText(receipt) {
     const lines = [
       `*Quittung Nr. ${receipt.number}*`,
@@ -987,15 +958,9 @@ export default function ReceiptApp() {
               />
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {currentReceipt.qrBillEnabled ? (
-                <button onClick={downloadServerPdf} style={styles.secondaryBtn} disabled={generatingPdf}>
-                  <Printer size={14} /> {generatingPdf ? "Erstelle PDF…" : "PDF herunterladen (exakt positioniert)"}
-                </button>
-              ) : (
-                <button onClick={printReceipt} style={styles.secondaryBtn}>
-                  <Printer size={14} /> Drucken / Als PDF speichern
-                </button>
-              )}
+              <button onClick={printReceipt} style={styles.secondaryBtn}>
+                <Printer size={14} /> Drucken / Als PDF speichern
+              </button>
               <button
                 onClick={sendMail}
                 style={styles.primaryBtnSmall}
@@ -1026,11 +991,8 @@ export default function ReceiptApp() {
           </div>
           <div className="no-print" style={{ ...styles.hint, maxWidth: 640, margin: "0 auto 8px" }}>
             Hinweis: „Per E-Mail senden" öffnet dein E-Mail-Programm mit vorausgefülltem Text. Da Browser aus
-            Sicherheitsgründen keine automatischen Anhänge erlauben,{" "}
-            {currentReceipt.qrBillEnabled
-              ? "lade die Quittung zuerst über den Button oben herunter"
-              : "speichere die Quittung zuerst als PDF („Drucken / Als PDF speichern\" → Ziel „Als PDF speichern\")"}{" "}
-            und hänge sie manuell an.
+            Sicherheitsgründen keine automatischen Anhänge erlauben, speichere die Quittung zuerst als PDF
+            („Drucken / Als PDF speichern" → Ziel „Als PDF speichern") und hänge sie manuell an.
           </div>
           <div className="no-print" style={{ ...styles.hint, maxWidth: 640, margin: "0 auto 20px" }}>
             Hinweis: „Per WhatsApp senden" öffnet WhatsApp (App oder WhatsApp Web) mit fertig
@@ -1042,10 +1004,7 @@ export default function ReceiptApp() {
           <ReceiptDocument receipt={currentReceipt} />
           {currentReceipt.qrBillEnabled && (
             <div className="no-print" style={{ textAlign: "center", margin: "16px 0" }}>
-              <span style={styles.docMuted}>
-                ↓ Vorschau der QR-Rechnung — für die exakt positionierte PDF-Datei den Button oben
-                „PDF herunterladen" nutzen
-              </span>
+              <span style={styles.docMuted}>↓ QR-Rechnung — wird beim Drucken auf der zweiten Seite mit ausgegeben</span>
             </div>
           )}
           {currentReceipt.qrBillEnabled && <QrBillDocument receipt={currentReceipt} />}
