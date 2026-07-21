@@ -221,7 +221,10 @@ Nach dem Login (Passwort aus Schritt 8) einmalig:
 - Tab **Verlauf**: alle Quittungen öffnen, bearbeiten oder löschen.
 - Tab **Buchhaltung**: nach Monat/Jahr filtern, offene vs. bezahlte QR-Rechnungen
   markieren, Summen einsehen, per Button **Export zu Excel** als `.xlsx`
-  herunterladen.
+  herunterladen. Offene QR-Rechnungen, deren 30-Tage-Zahlungsfrist abgelaufen ist,
+  werden farblich hervorgehoben (inkl. Anzahl überfälliger Tage); für diese steht
+  ein Button **Mahnung erstellen** bereit, der eine eigenständige Mahnungs-PDF mit
+  erneut beigelegtem Einzahlungsschein generiert.
 
 ## 10. PDF-Erzeugung & Versand
 

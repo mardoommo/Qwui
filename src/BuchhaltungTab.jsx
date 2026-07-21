@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
-import { Download, Check, Loader2 } from "lucide-react";
+import { Download, Check, Loader2, AlertTriangle, Bell } from "lucide-react";
+import { buildMahnungPdfBytes } from "./receiptPdf.js";
 
 function chf(n) {
   const num = Number(n) || 0;
@@ -12,10 +13,20 @@ function formatDateDE(iso) {
   return `${d}.${m}.${y}`;
 }
 
+// Anzahl ganzer Tage zwischen einem ISO-Datum und heute.
+function daysSince(iso) {
+  if (!iso) return 0;
+  const from = new Date(`${iso}T00:00:00`);
+  const now = new Date();
+  return Math.floor((now - from) / 86400000);
+}
+
 const MONTH_NAMES = [
   "Januar", "Februar", "März", "April", "Mai", "Juni",
   "Juli", "August", "September", "Oktober", "November", "Dezember",
 ];
+
+const OVERDUE_THRESHOLD_DAYS = 30;
 
 function statusOf(receipt) {
   if (receipt.qrBillEnabled) {
@@ -30,11 +41,18 @@ function statusLabel(status) {
   return "Direktzahlung";
 }
 
+// Offene QR-Rechnung, deren Zahlungsfrist (30 Tage ab Rechnungsdatum, siehe
+// Hinweistext auf der Quittung) bereits abgelaufen ist.
+function isOverdue(receipt) {
+  return statusOf(receipt) === "offen" && daysSince(receipt.date) > OVERDUE_THRESHOLD_DAYS;
+}
+
 export default function BuchhaltungTab({ receipts, onTogglePaid }) {
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth()); // 0-11, or "all"
   const [exporting, setExporting] = useState(false);
+  const [mahnungId, setMahnungId] = useState(null);
 
   const availableYears = useMemo(() => {
     const years = new Set([now.getFullYear()]);
@@ -61,6 +79,7 @@ export default function BuchhaltungTab({ receipts, onTogglePaid }) {
     .filter((r) => statusOf(r) === "offen")
     .reduce((sum, r) => sum + (Number(r.total) || 0), 0);
   const totalPaid = total - totalOpen;
+  const overdueCount = filtered.filter(isOverdue).length;
 
   function periodLabel() {
     if (selectedMonth === "all") return `Jahr ${selectedYear}`;
@@ -100,6 +119,27 @@ export default function BuchhaltungTab({ receipts, onTogglePaid }) {
     }
   }
 
+  async function createMahnung(receipt) {
+    setMahnungId(receipt.id);
+    try {
+      const pdfBytes = await buildMahnungPdfBytes(receipt);
+      const blob = new Blob([pdfBytes], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Mahnung_${receipt.number}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (err) {
+      console.error("Mahnung-Erzeugung fehlgeschlagen", err);
+      alert(`Mahnung konnte nicht erstellt werden: ${err.message}`);
+    } finally {
+      setMahnungId(null);
+    }
+  }
+
   return (
     <div>
       <div style={styles.eyebrow}>05 — Buchhaltung</div>
@@ -135,7 +175,16 @@ export default function BuchhaltungTab({ receipts, onTogglePaid }) {
       <div style={styles.legend}>
         <span style={styles.legendItem}><span style={{ ...styles.dot, background: "#B00020" }} /> Offene Rechnung</span>
         <span style={styles.legendItem}><span style={{ ...styles.dot, background: "#1D7A3C" }} /> Bezahlt / Direktzahlung</span>
+        <span style={styles.legendItem}><AlertTriangle size={12} color="#B5480C" /> Überfällig (&gt; {OVERDUE_THRESHOLD_DAYS} Tage)</span>
       </div>
+
+      {overdueCount > 0 && (
+        <div style={styles.overdueBanner}>
+          <AlertTriangle size={14} color="#B5480C" />
+          {overdueCount} offene Rechnung{overdueCount === 1 ? "" : "en"} in diesem Zeitraum
+          {overdueCount === 1 ? " ist" : " sind"} seit mehr als {OVERDUE_THRESHOLD_DAYS} Tagen überfällig.
+        </div>
+      )}
 
       {filtered.length === 0 ? (
         <div style={styles.empty}>Keine Einträge für {periodLabel()}.</div>
@@ -143,10 +192,18 @@ export default function BuchhaltungTab({ receipts, onTogglePaid }) {
         <div style={styles.table}>
           {filtered.map((r) => {
             const status = statusOf(r);
+            const overdue = isOverdue(r);
             const rowColor = status === "offen" ? "#FDEBEC" : "#EAF6EE";
             const textColor = status === "offen" ? "#8A1620" : "#155C2C";
             return (
-              <div key={r.id} style={{ ...styles.row, background: rowColor }}>
+              <div
+                key={r.id}
+                style={{
+                  ...styles.row,
+                  background: rowColor,
+                  ...(overdue ? styles.rowOverdue : {}),
+                }}
+              >
                 <div style={styles.rowMain}>
                   <div>
                     <div style={{ fontWeight: 600 }}>
@@ -156,6 +213,13 @@ export default function BuchhaltungTab({ receipts, onTogglePaid }) {
                       {formatDateDE(r.date)}
                       {r.vatEnabled ? " · inkl. MWST" : ""}
                     </div>
+                    {overdue && (
+                      <div style={styles.overdueTag}>
+                        <AlertTriangle size={11} />
+                        Überfällig seit {daysSince(r.date) - OVERDUE_THRESHOLD_DAYS} Tag
+                        {daysSince(r.date) - OVERDUE_THRESHOLD_DAYS === 1 ? "" : "en"}
+                      </div>
+                    )}
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <div className="mono" style={{ fontWeight: 700 }}>CHF {chf(r.total)}</div>
@@ -164,16 +228,32 @@ export default function BuchhaltungTab({ receipts, onTogglePaid }) {
                     </div>
                   </div>
                 </div>
-                {status === "offen" && (
-                  <button onClick={() => onTogglePaid(r.id, true)} style={styles.markPaidBtn}>
-                    <Check size={13} /> Als bezahlt markieren
-                  </button>
-                )}
-                {status === "bezahlt" && (
-                  <button onClick={() => onTogglePaid(r.id, false)} style={styles.markUnpaidBtn}>
-                    Als offen markieren
-                  </button>
-                )}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {status === "offen" && (
+                    <button onClick={() => onTogglePaid(r.id, true)} style={styles.markPaidBtn}>
+                      <Check size={13} /> Als bezahlt markieren
+                    </button>
+                  )}
+                  {status === "bezahlt" && (
+                    <button onClick={() => onTogglePaid(r.id, false)} style={styles.markUnpaidBtn}>
+                      Als offen markieren
+                    </button>
+                  )}
+                  {overdue && (
+                    <button
+                      onClick={() => createMahnung(r)}
+                      style={styles.mahnungBtn}
+                      disabled={mahnungId === r.id}
+                    >
+                      {mahnungId === r.id ? (
+                        <Loader2 size={13} className="animate-spin" />
+                      ) : (
+                        <Bell size={13} />
+                      )}
+                      {mahnungId === r.id ? "Erstelle Mahnung…" : "Mahnung erstellen"}
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -225,14 +305,36 @@ const styles = {
     alignItems: "center",
     gap: 6,
   },
-  legend: { display: "flex", gap: 16, marginBottom: 16, fontSize: 12, color: "#5B5F66" },
+  legend: { display: "flex", gap: 16, marginBottom: 16, fontSize: 12, color: "#5B5F66", flexWrap: "wrap" },
   legendItem: { display: "flex", alignItems: "center", gap: 6 },
   dot: { width: 8, height: 8, borderRadius: "50%", display: "inline-block" },
+  overdueBanner: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    background: "#FDF3EC",
+    border: "1px solid #F3D9C4",
+    color: "#8A4B12",
+    fontSize: 12,
+    fontWeight: 600,
+    padding: "10px 12px",
+    marginBottom: 16,
+  },
   empty: { fontSize: 13, color: "#8B8F96", fontStyle: "italic", padding: "20px 0" },
   table: { display: "flex", flexDirection: "column", gap: 8 },
   row: { padding: "10px 14px", borderRadius: 2 },
+  rowOverdue: { boxShadow: "inset 3px 0 0 #B5480C" },
   rowMain: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 },
   muted: { fontSize: 12, color: "#70747C" },
+  overdueTag: {
+    display: "flex",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 4,
+    fontSize: 11,
+    fontWeight: 700,
+    color: "#B5480C",
+  },
   markPaidBtn: {
     marginTop: 8,
     background: "#fff",
@@ -255,6 +357,19 @@ const styles = {
     fontWeight: 600,
     padding: "5px 10px",
     cursor: "pointer",
+  },
+  mahnungBtn: {
+    marginTop: 8,
+    background: "#B5480C",
+    border: "1px solid #B5480C",
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: 600,
+    padding: "5px 10px",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    gap: 5,
   },
   totalsBox: {
     marginTop: 20,

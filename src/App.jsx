@@ -1,15 +1,9 @@
 import React, { useState, useEffect } from "react";
 import logoImg from "./assets/logo.png";
-import QRCode from "qrcode";
 import QrBillDocument from "./QrBillDocument.jsx";
 import BuchhaltungTab from "./BuchhaltungTab.jsx";
-import { generateReceiptPdf } from "./pdfGenerator.js";
-import {
-  isValidSwissIban,
-  buildSwissQrPayload,
-  buildCreditorReference,
-  formatReferenceDisplay,
-} from "./qrbill.js";
+import { buildReceiptPdfBytes } from "./receiptPdf.js";
+import { isValidSwissIban } from "./qrbill.js";
 import {
   Plus,
   Trash2,
@@ -106,74 +100,6 @@ function formatDateDE(iso) {
   if (!iso) return "";
   const [y, m, d] = iso.split("-");
   return `${d}.${m}.${y}`;
-}
-
-function dataUrlToUint8Array(dataUrl) {
-  const base64 = dataUrl.split(",")[1];
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
-// Erzeugt die fertigen PDF-Bytes für eine Quittung (inkl. QR-Rechnung, falls
-// aktiviert). Eigenständig auf Modulebene, damit sowohl der Download-Button
-// als auch der Teilen-Button (Web Share API) dieselbe Logik nutzen können.
-async function buildReceiptPdfBytes(receipt) {
-  let qrPngBytes = null;
-  let referenceDisplay = "";
-  let qrIban = "";
-  let qrCreditor = {};
-
-  if (receipt.qrBillEnabled) {
-    const co = receipt.company || {};
-    const qr = co.qrBill || {};
-    qrIban = qr.iban || "";
-    qrCreditor = {
-      name: qr.name || co.name,
-      street: qr.street,
-      houseNumber: qr.houseNumber,
-      postalCode: qr.postalCode,
-      city: qr.city,
-      country: qr.country || "CH",
-    };
-    const customer = receipt.customer || {};
-    const debtor =
-      customer.name && customer.postalCode && customer.city
-        ? {
-            name: customer.name,
-            street: customer.street,
-            houseNumber: customer.houseNumber,
-            postalCode: customer.postalCode,
-            city: customer.city,
-            country: customer.country || "CH",
-          }
-        : null;
-
-    const payload = buildSwissQrPayload({
-      iban: qrIban,
-      creditor: qrCreditor,
-      amount: receipt.total,
-      currency: "CHF",
-      debtor,
-      referenceText: receipt.number,
-      message: `Quittung Nr. ${receipt.number}`,
-    });
-
-    const creditorReference = buildCreditorReference(receipt.number);
-    referenceDisplay = formatReferenceDisplay(creditorReference);
-
-    const dataUrl = await QRCode.toDataURL(payload, {
-      errorCorrectionLevel: "M",
-      margin: 0,
-      width: 480,
-      color: { dark: "#000000", light: "#ffffff" },
-    });
-    qrPngBytes = dataUrlToUint8Array(dataUrl);
-  }
-
-  const enrichedReceipt = { ...receipt, referenceDisplay, qrIban, qrCreditor };
-  return generateReceiptPdf(enrichedReceipt, qrPngBytes);
 }
 
 export default function ReceiptApp() {

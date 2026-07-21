@@ -52,6 +52,22 @@ function wrapText(text, font, size, maxWidth) {
   return lines.length ? lines : [""];
 }
 
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function addDaysISO(iso, days) {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function daysBetweenISO(fromISO, toISO) {
+  const from = new Date(`${fromISO}T00:00:00`);
+  const to = new Date(`${toISO}T00:00:00`);
+  return Math.max(0, Math.round((to - from) / 86400000));
+}
+
 export async function generateReceiptPdf(receipt, qrPngBytes) {
   const pdfDoc = await PDFDocument.create();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -170,6 +186,118 @@ export async function generateReceiptPdf(receipt, qrPngBytes) {
   //      reicht, sonst auf einer frischen Seite 2 — beides exakt berechnet,
   //      kein Browser-Druck-Ratespiel mehr. ----
   if (receipt.qrBillEnabled && qrPngBytes) {
+    const SLIP_H = mm(105);
+    if (y < SLIP_H) {
+      page = pdfDoc.addPage([PAGE_W, PAGE_H]);
+    }
+    await drawQrSlip(pdfDoc, page, receipt, qrPngBytes, { font, fontBold });
+  }
+
+  return pdfDoc.save();
+}
+
+// Erzeugt eine Mahnung (Zahlungserinnerung) für eine überfällige, noch
+// unbezahlte QR-Rechnung. Referenziert die ursprüngliche Rechnungsnummer und
+// legt den Einzahlungsschein erneut bei, damit direkt bezahlt werden kann.
+export async function generateMahnungPdf(receipt, qrPngBytes) {
+  const pdfDoc = await PDFDocument.create();
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const fontOblique = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
+
+  let page = pdfDoc.addPage([PAGE_W, PAGE_H]);
+  let y = PAGE_H - MARGIN;
+
+  function text(str, x, yPos, { size = 9, f = font, color = COLOR.ink } = {}) {
+    page.drawText(str || "", { x, y: yPos, size, font: f, color });
+  }
+
+  function line(x1, yPos, x2, color = COLOR.line, width = 1) {
+    page.drawLine({ start: { x: x1, y: yPos }, end: { x: x2, y: yPos }, thickness: width, color });
+  }
+
+  // ---- Kopfzeile: Firma links, "MAHNUNG" rechts ----
+  const company = receipt.company || {};
+  let leftY = y;
+  text(company.name || "Firma", MARGIN, leftY, { size: 12, f: fontBold });
+  leftY -= 14;
+  [company.address, company.zipCity, company.email, company.phone].filter(Boolean).forEach((l) => {
+    text(l, MARGIN, leftY, { size: 8.5, color: COLOR.gray });
+    leftY -= 11;
+  });
+
+  const rightX = PAGE_W - MARGIN;
+  const titleStr = "MAHNUNG";
+  const titleWidth = fontBold.widthOfTextAtSize(titleStr, 17);
+  text(titleStr, rightX - titleWidth, y - 2, { size: 17, f: fontBold, color: COLOR.red });
+  const refStr = `Rechnung Nr. ${receipt.number}`;
+  const refWidth = fontBold.widthOfTextAtSize(refStr, 10);
+  text(refStr, rightX - refWidth, y - 20, { size: 10, f: fontBold });
+  const todayStr = formatDateDE(todayISO());
+  const todayWidth = font.widthOfTextAtSize(todayStr, 8.5);
+  text(todayStr, rightX - todayWidth, y - 32, { size: 8.5, color: COLOR.gray });
+
+  y = Math.min(leftY, y - 44) - 14;
+  line(MARGIN, y, PAGE_W - MARGIN, COLOR.ink, 1.5);
+  y -= 26;
+
+  // ---- Empfänger ----
+  text("EMPFÄNGER", MARGIN, y, { size: 7.5, f: fontBold, color: COLOR.lightGray });
+  y -= 14;
+  text(receipt.customer?.name || "", MARGIN, y, { size: 11, f: fontBold });
+  y -= 14;
+  const custAddr = [
+    `${receipt.customer?.street || ""} ${receipt.customer?.houseNumber || ""}`.trim(),
+    `${receipt.customer?.postalCode || ""} ${receipt.customer?.city || ""}`.trim(),
+  ].filter(Boolean);
+  const legacyAddr = custAddr.length ? custAddr : [receipt.customer?.address].filter(Boolean);
+  legacyAddr.forEach((l) => {
+    text(l, MARGIN, y, { size: 8.5, color: COLOR.gray });
+    y -= 11;
+  });
+  y -= 20;
+
+  // ---- Mahntext ----
+  const dueDate = addDaysISO(receipt.date, 30);
+  const overdueDays = daysBetweenISO(dueDate, todayISO());
+  const bodyText =
+    `Wir haben festgestellt, dass die untenstehende Rechnung noch nicht beglichen wurde. ` +
+    `Die Zahlungsfrist von 30 Tagen ist am ${formatDateDE(dueDate)} abgelaufen (seit ${overdueDays} ` +
+    `Tag${overdueDays === 1 ? "" : "en"} überfällig). Wir bitten Sie, den ausstehenden Betrag innert ` +
+    `10 Tagen mit dem beiliegenden Einzahlungsschein zu begleichen. Sollten Sie die Zahlung ` +
+    `zwischenzeitlich bereits ausgeführt haben, betrachten Sie dieses Schreiben als gegenstandslos.`;
+  wrapText(bodyText, font, 9.5, PAGE_W - 2 * MARGIN).forEach((l) => {
+    text(l, MARGIN, y, { size: 9.5 });
+    y -= 13;
+  });
+  y -= 14;
+
+  // ---- Zusammenfassung ----
+  line(MARGIN, y, PAGE_W - MARGIN, COLOR.ink, 1.5);
+  y -= 18;
+  [
+    ["Rechnung Nr.", receipt.number],
+    ["Rechnungsdatum", formatDateDE(receipt.date)],
+    ["Fällig seit", formatDateDE(dueDate)],
+    ["Betrag", `CHF ${chf(receipt.total)}`],
+  ].forEach(([label, value]) => {
+    text(label, MARGIN, y, { size: 9.5, color: COLOR.gray });
+    const valueWidth = fontBold.widthOfTextAtSize(value, 10);
+    text(value, PAGE_W - MARGIN - valueWidth, y, { size: 10, f: fontBold });
+    y -= 16;
+  });
+  y -= 6;
+  line(MARGIN, y, PAGE_W - MARGIN, COLOR.line, 0.75);
+  y -= 24;
+
+  text("Freundliche Grüsse", MARGIN, y, { size: 9 });
+  y -= 16;
+  const sigWidth = fontOblique.widthOfTextAtSize(company.name || "", 9.5);
+  text(company.name || "", MARGIN, y, { size: 9.5, f: fontOblique });
+  y -= 30;
+
+  // ---- Einzahlungsschein erneut beilegen, damit direkt bezahlt werden kann ----
+  if (qrPngBytes) {
     const SLIP_H = mm(105);
     if (y < SLIP_H) {
       page = pdfDoc.addPage([PAGE_W, PAGE_H]);
