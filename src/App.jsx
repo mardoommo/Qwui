@@ -89,6 +89,18 @@ function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Nächste freie Quittungsnummer: höchste bisher vergebene Nummer + 1, statt
+// receipts.length + 1 — sonst würden nach dem Löschen einer Quittung
+// Nummern doppelt vergeben (z.B. Löschen von Nr. 0003 bei 5 Quittungen würde
+// die nächste neue Quittung wieder auf 0004 setzen, obwohl das schon vergeben ist).
+function nextReceiptNumber(receipts) {
+  const maxNumber = receipts.reduce((max, r) => {
+    const n = parseInt(r.number, 10);
+    return Number.isFinite(n) && n > max ? n : max;
+  }, 0);
+  return String(maxNumber + 1).padStart(4, "0");
+}
+
 function formatDateDE(iso) {
   if (!iso) return "";
   const [y, m, d] = iso.split("-");
@@ -249,7 +261,7 @@ export default function ReceiptApp() {
       return;
     }
 
-    const number = String(receipts.length + 1).padStart(4, "0");
+    const number = nextReceiptNumber(receipts);
     const isQrBill = qrBillEnabled && isValidSwissIban(company.qrBill?.iban);
     const receipt = {
       id: uid(),

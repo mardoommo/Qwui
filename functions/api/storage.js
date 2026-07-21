@@ -42,7 +42,12 @@ export async function onRequestGet(context) {
 
 export async function onRequestPost(context) {
   const { request, env } = context;
-  const body = await request.json();
+  let body;
+  try {
+    body = await request.json();
+  } catch (e) {
+    return new Response(JSON.stringify({ error: "Ungültiges JSON im Request-Body" }), { status: 400 });
+  }
   const { key, value, shared } = body;
 
   if (!key || value === undefined) {

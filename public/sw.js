@@ -19,6 +19,17 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+
+  const url = new URL(event.request.url);
+  // API-Requests (Firma/Kunden/Quittungen aus D1) müssen immer frisch vom
+  // Netzwerk kommen — sonst zeigt die App nach dem ersten Laden veraltete
+  // Daten an, bis der Hintergrund-Refetch beim übernächsten Aufruf greift.
+  // Das widerspricht dem Zweck der zentralen Datenbank.
+  if (url.pathname.startsWith("/api/")) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((cached) => {
       const networkFetch = fetch(event.request)

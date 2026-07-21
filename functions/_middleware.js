@@ -30,13 +30,18 @@ export async function onRequest(context) {
   const authHeader = request.headers.get("Authorization");
 
   if (authHeader && authHeader.startsWith("Basic ")) {
-    const encoded = authHeader.slice(6);
-    const decoded = atob(encoded);
-    const separatorIndex = decoded.indexOf(":");
-    const enteredPassword = decoded.slice(separatorIndex + 1);
+    try {
+      const encoded = authHeader.slice(6);
+      const decoded = atob(encoded);
+      const separatorIndex = decoded.indexOf(":");
+      const enteredPassword = decoded.slice(separatorIndex + 1);
 
-    if (enteredPassword === password) {
-      return context.next(); // Zugriff erlaubt, normale Seite ausliefern
+      if (enteredPassword === password) {
+        return context.next(); // Zugriff erlaubt, normale Seite ausliefern
+      }
+    } catch (e) {
+      // Ungültiger Base64-Header (z.B. von automatisierten Scans) ->
+      // sauber als "nicht autorisiert" behandeln statt mit 500 abzustürzen.
     }
   }
 

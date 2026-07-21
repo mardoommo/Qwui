@@ -85,24 +85,16 @@ anmeldet.
 **Sicherheit:** Die API-Endpunkte (`/api/storage`, `/api/storage-list`) sind durch
 dieselbe `functions/_middleware.js` geschützt wie der Rest der Seite.
 
-## 6. QR-Rechnung als exakt positioniertes PDF
+## 6. PDF-Erzeugung (inkl. QR-Rechnung als exakt positioniertes PDF)
 
-Für Quittungen mit aktivierter QR-Rechnung wird das PDF **serverseitig** erzeugt
-(`functions/api/generate-pdf.js` + `functions/_lib/pdfGenerator.js`, via `pdf-lib`)
-statt über den Browser-Druckdialog. Der Vorteil: Jedes Element wird mit exakten
-Koordinaten selbst platziert — die QR-Rechnung landet dadurch **garantiert** am
-unteren Seitenrand, unabhängig von Browser/Druck-Engine, und unabhängig davon, wie
-lang die Quittung ist (getestet von 1 bis 100 Positionen, jeweils exakt dieselbe
-Position, keine Inhalte gehen je verloren).
+Der Button "PDF herunterladen" erzeugt das PDF **clientseitig im Browser**
+(`src/pdfGenerator.js`, via `pdf-lib`) — kein Server-Umweg. Jedes Element wird mit
+exakten Koordinaten selbst platziert; ist die QR-Rechnung aktiviert, landet sie
+dadurch **garantiert** am unteren Seitenrand, unabhängig von Browser/Druck-Engine,
+und unabhängig davon, wie lang die Quittung ist.
 
-**Wichtig für den Cloudflare-Deploy:** Die `qrcode`-Bibliothek benötigt Node.js-
-Kompatibilität. Das ist über `wrangler.toml` im Projekt-Root bereits konfiguriert
-(`compatibility_flags = ["nodejs_compat"]`). Falls Cloudflare das nicht automatisch
-übernimmt, zusätzlich manuell setzen: Pages-Projekt → **Settings** → **Functions** →
-**Compatibility flags** → `nodejs_compat` für Production **und** Preview hinzufügen.
-
-Normale Quittungen (ohne QR-Rechnung) nutzen weiterhin den einfachen
-Browser-Druck (`window.print()`) — das hat schon immer zuverlässig funktioniert.
+Alternativ steht weiterhin der einfache Browser-Druck (`window.print()`, Button
+"Drucken") zur Verfügung.
 
 ## Wichtig: Daten und Geräte
 
