@@ -24,6 +24,7 @@ import {
   Loader2,
   MessageCircle,
   Wallet,
+  Share2,
 } from "lucide-react";
 
 const KEYS = {
@@ -105,6 +106,74 @@ function formatDateDE(iso) {
   if (!iso) return "";
   const [y, m, d] = iso.split("-");
   return `${d}.${m}.${y}`;
+}
+
+function dataUrlToUint8Array(dataUrl) {
+  const base64 = dataUrl.split(",")[1];
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+// Erzeugt die fertigen PDF-Bytes für eine Quittung (inkl. QR-Rechnung, falls
+// aktiviert). Eigenständig auf Modulebene, damit sowohl der Download-Button
+// als auch der Teilen-Button (Web Share API) dieselbe Logik nutzen können.
+async function buildReceiptPdfBytes(receipt) {
+  let qrPngBytes = null;
+  let referenceDisplay = "";
+  let qrIban = "";
+  let qrCreditor = {};
+
+  if (receipt.qrBillEnabled) {
+    const co = receipt.company || {};
+    const qr = co.qrBill || {};
+    qrIban = qr.iban || "";
+    qrCreditor = {
+      name: qr.name || co.name,
+      street: qr.street,
+      houseNumber: qr.houseNumber,
+      postalCode: qr.postalCode,
+      city: qr.city,
+      country: qr.country || "CH",
+    };
+    const customer = receipt.customer || {};
+    const debtor =
+      customer.name && customer.postalCode && customer.city
+        ? {
+            name: customer.name,
+            street: customer.street,
+            houseNumber: customer.houseNumber,
+            postalCode: customer.postalCode,
+            city: customer.city,
+            country: customer.country || "CH",
+          }
+        : null;
+
+    const payload = buildSwissQrPayload({
+      iban: qrIban,
+      creditor: qrCreditor,
+      amount: receipt.total,
+      currency: "CHF",
+      debtor,
+      referenceText: receipt.number,
+      message: `Quittung Nr. ${receipt.number}`,
+    });
+
+    const creditorReference = buildCreditorReference(receipt.number);
+    referenceDisplay = formatReferenceDisplay(creditorReference);
+
+    const dataUrl = await QRCode.toDataURL(payload, {
+      errorCorrectionLevel: "M",
+      margin: 0,
+      width: 480,
+      color: { dark: "#000000", light: "#ffffff" },
+    });
+    qrPngBytes = dataUrlToUint8Array(dataUrl);
+  }
+
+  const enrichedReceipt = { ...receipt, referenceDisplay, qrIban, qrCreditor };
+  return generateReceiptPdf(enrichedReceipt, qrPngBytes);
 }
 
 export default function ReceiptApp() {
@@ -387,73 +456,26 @@ export default function ReceiptApp() {
   }
 
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [sharing, setSharing] = useState(false);
 
-  function dataUrlToUint8Array(dataUrl) {
-    const base64 = dataUrl.split(",")[1];
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    return bytes;
-  }
+  // Web Share API (Level 2, Datei-Anhänge) nur nutzen, wenn der Browser sie
+  // tatsächlich unterstützt (v.a. mobile Browser) — sonst bleibt es beim
+  // bisherigen Weg über "PDF herunterladen" + manuell anhängen.
+  const [canShareFiles, setCanShareFiles] = useState(false);
+  useEffect(() => {
+    try {
+      const testFile = new File([""], "test.pdf", { type: "application/pdf" });
+      setCanShareFiles(!!(navigator.canShare && navigator.canShare({ files: [testFile] })));
+    } catch (e) {
+      setCanShareFiles(false);
+    }
+  }, []);
 
   async function downloadPdf() {
     if (!currentReceipt) return;
     setGeneratingPdf(true);
     try {
-      let qrPngBytes = null;
-      let referenceDisplay = "";
-      let qrIban = "";
-      let qrCreditor = {};
-
-      if (currentReceipt.qrBillEnabled) {
-        const co = currentReceipt.company || {};
-        const qr = co.qrBill || {};
-        qrIban = qr.iban || "";
-        qrCreditor = {
-          name: qr.name || co.name,
-          street: qr.street,
-          houseNumber: qr.houseNumber,
-          postalCode: qr.postalCode,
-          city: qr.city,
-          country: qr.country || "CH",
-        };
-        const customer = currentReceipt.customer || {};
-        const debtor =
-          customer.name && customer.postalCode && customer.city
-            ? {
-                name: customer.name,
-                street: customer.street,
-                houseNumber: customer.houseNumber,
-                postalCode: customer.postalCode,
-                city: customer.city,
-                country: customer.country || "CH",
-              }
-            : null;
-
-        const payload = buildSwissQrPayload({
-          iban: qrIban,
-          creditor: qrCreditor,
-          amount: currentReceipt.total,
-          currency: "CHF",
-          debtor,
-          referenceText: currentReceipt.number,
-          message: `Quittung Nr. ${currentReceipt.number}`,
-        });
-
-        const creditorReference = buildCreditorReference(currentReceipt.number);
-        referenceDisplay = formatReferenceDisplay(creditorReference);
-
-        const dataUrl = await QRCode.toDataURL(payload, {
-          errorCorrectionLevel: "M",
-          margin: 0,
-          width: 480,
-          color: { dark: "#000000", light: "#ffffff" },
-        });
-        qrPngBytes = dataUrlToUint8Array(dataUrl);
-      }
-
-      const enrichedReceipt = { ...currentReceipt, referenceDisplay, qrIban, qrCreditor };
-      const pdfBytes = await generateReceiptPdf(enrichedReceipt, qrPngBytes);
+      const pdfBytes = await buildReceiptPdfBytes(currentReceipt);
       const blob = new Blob([pdfBytes], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -468,6 +490,32 @@ export default function ReceiptApp() {
       alert(`PDF-Erzeugung fehlgeschlagen: ${err.message}\n\nBitte nutze stattdessen 'Drucken'.`);
     } finally {
       setGeneratingPdf(false);
+    }
+  }
+
+  // Teilt die Quittung direkt als PDF-Anhang über den nativen Teilen-Dialog
+  // des Geräts (WhatsApp, Mail, etc.) — löst den manuellen Umweg über
+  // "herunterladen, dann in der anderen App anhängen".
+  async function sharePdf() {
+    if (!currentReceipt) return;
+    setSharing(true);
+    try {
+      const pdfBytes = await buildReceiptPdfBytes(currentReceipt);
+      const file = new File([pdfBytes], `Quittung_${currentReceipt.number}.pdf`, {
+        type: "application/pdf",
+      });
+      await navigator.share({
+        files: [file],
+        title: `Quittung Nr. ${currentReceipt.number}`,
+        text: `Quittung Nr. ${currentReceipt.number} – CHF ${chf(currentReceipt.total)}`,
+      });
+    } catch (err) {
+      if (err.name !== "AbortError") {
+        console.error(err);
+        alert(`Teilen fehlgeschlagen: ${err.message}\n\nBitte nutze stattdessen 'PDF herunterladen'.`);
+      }
+    } finally {
+      setSharing(false);
     }
   }
 
@@ -1068,6 +1116,11 @@ export default function ReceiptApp() {
               <button onClick={printReceipt} style={styles.secondaryBtn}>
                 Drucken
               </button>
+              {canShareFiles && (
+                <button onClick={sharePdf} style={styles.secondaryBtn} disabled={sharing}>
+                  <Share2 size={14} /> {sharing ? "Bereite vor…" : "Teilen"}
+                </button>
+              )}
               <button
                 onClick={sendMail}
                 style={styles.primaryBtnSmall}
@@ -1099,7 +1152,8 @@ export default function ReceiptApp() {
           <div className="no-print" style={{ ...styles.hint, maxWidth: 640, margin: "0 auto 8px" }}>
             Hinweis: „Per E-Mail senden" öffnet dein E-Mail-Programm mit vorausgefülltem Text. Da Browser aus
             Sicherheitsgründen keine automatischen Anhänge erlauben, lade die Quittung zuerst über den Button
-            „PDF herunterladen" herunter und hänge sie manuell an.
+            „PDF herunterladen" herunter und hänge sie manuell an
+            {canShareFiles ? ' — oder nutze stattdessen „Teilen" (siehe unten).' : "."}
           </div>
           <div className="no-print" style={{ ...styles.hint, maxWidth: 640, margin: "0 auto 20px" }}>
             Hinweis: „Per WhatsApp senden" öffnet WhatsApp (App oder WhatsApp Web) mit fertig
@@ -1107,6 +1161,13 @@ export default function ReceiptApp() {
             öffnet (privat oder Business), entscheidet dein Betriebssystem, nicht dieses Tool — ist
             nur WhatsApp Business installiert, öffnet sich automatisch diese.
           </div>
+          {canShareFiles && (
+            <div className="no-print" style={{ ...styles.hint, maxWidth: 640, margin: "0 auto 20px" }}>
+              Tipp: Der Button „Teilen" öffnet den Teilen-Dialog deines Geräts und übergibt die
+              Quittung direkt als PDF-Anhang an WhatsApp, Mail oder eine andere App — ohne den
+              Umweg über „Herunterladen" und manuelles Anhängen.
+            </div>
+          )}
 
           <ReceiptDocument receipt={currentReceipt} />
           {currentReceipt.qrBillEnabled && (

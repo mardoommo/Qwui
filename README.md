@@ -238,6 +238,13 @@ In der Quittungs-Vorschau stehen mehrere Aktionen zur Verfügung:
   anhängen).
 - **Per WhatsApp senden**: öffnet WhatsApp (App oder Web) mit fertigem Text; ist eine
   Telefonnummer beim Kunden hinterlegt, wird der Chat direkt vorausgewählt.
+- **Teilen** (nur sichtbar, wenn das Gerät es unterstützt — v. a. mobile Browser):
+  übergibt die Quittung direkt als PDF-Anhang an den nativen Teilen-Dialog des
+  Geräts (WhatsApp, Mail, weitere Apps), ohne den Umweg über „PDF herunterladen"
+  und manuelles Anhängen. Nutzt die
+  [Web Share API (Level 2)](https://developer.mozilla.org/docs/Web/API/Navigator/canShare);
+  auf Desktop-Browsern ohne Unterstützung bleibt der Button ausgeblendet, die
+  bisherigen Wege (Herunterladen, E-Mail, WhatsApp) funktionieren dort unverändert.
 
 ## 11. Als App installieren (PWA)
 
