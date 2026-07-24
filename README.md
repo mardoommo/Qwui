@@ -353,6 +353,10 @@ Cloudflare D1. Technisch ein zweites, kleines Teilprojekt in `desktop/`
 Speicher-Adapter ist ausgetauscht (`src/electronStorage.js` statt
 `src/apiStorage.js`, automatisch erkannt in `src/main.jsx`).
 
+**Download:** Fertige `Qwui-1.0.0.exe` zum direkten Herunterladen unter
+[Releases](https://github.com/mardoommo/Qwui/releases/tag/v1.0.0-desktop) —
+kein eigenes Bauen nötig, einfach herunterladen und doppelklicken.
+
 ### Bauen
 
 ```bash
