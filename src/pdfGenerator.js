@@ -52,19 +52,34 @@ function wrapText(text, font, size, maxWidth) {
   return lines.length ? lines : [""];
 }
 
+// Lokales Kalenderdatum von "heute" (nicht toISOString(), das liefert das
+// UTC-Datum — für Nutzer in der Schweiz z.B. nachts zwischen 00:00 und
+// 01:00/02:00 Uhr fälschlich noch das Datum von gestern).
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
+// Reine Kalenderdatum-Arithmetik, komplett in UTC verankert (Konstruktion
+// UND Ausgabe), damit sie unabhängig von der lokalen Zeitzone ist. Mit
+// lokaler Konstruktion + toISOString()-Ausgabe (frühere Version) verschob
+// sich das Ergebnis in der Schweiz (UTC+1/+2) immer um einen Tag zurück,
+// weil lokale Mitternacht in UTC auf den Vorabend fällt.
 function addDaysISO(iso, days) {
-  const d = new Date(`${iso}T00:00:00`);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  const [y, m, d] = iso.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 function daysBetweenISO(fromISO, toISO) {
-  const from = new Date(`${fromISO}T00:00:00`);
-  const to = new Date(`${toISO}T00:00:00`);
+  const [fy, fm, fd] = fromISO.split("-").map(Number);
+  const [ty, tm, td] = toISO.split("-").map(Number);
+  const from = Date.UTC(fy, fm - 1, fd);
+  const to = Date.UTC(ty, tm - 1, td);
   return Math.max(0, Math.round((to - from) / 86400000));
 }
 

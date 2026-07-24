@@ -538,8 +538,11 @@ export default function ReceiptApp() {
     if (receipt.note) lines.push("", `Notiz: ${receipt.note}`);
     lines.push(
       "",
+      // Hier bewusst nicht "beiliegender Einzahlungsschein" wie im PDF —
+      // die WhatsApp-Nachricht ist reiner Text ohne Anhang, das würde einen
+      // nicht vorhandenen Anhang suggerieren.
       receipt.qrBillEnabled
-        ? "Zahlbar per beiliegendem Einzahlungsschein innert 30 Tagen."
+        ? "Zahlbar per Rechnung innert 30 Tagen (Einzahlungsschein siehe PDF)."
         : "Betrag dankend erhalten."
     );
     if (receipt.company.name) lines.push(receipt.company.name);
