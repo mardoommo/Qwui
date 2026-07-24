@@ -1,24 +1,46 @@
 // Ermittelt den lokalen Datenordner für die Desktop-Version und legt ihn beim
-// ersten Start an. Bewusst NICHT relativ zur .exe: Der "portable" Windows-Build
-// entpackt sich bei jedem Start in einen wechselnden Temp-Ordner — Daten dort
-// abzulegen würde sie bei jedem Neustart der App verschwinden lassen.
-// app.getPath('documents') ist stabil und unabhängig davon, wo/wie sich die
-// .exe gerade entpackt hat.
+// ersten Start an — direkt neben der .exe-Datei, wie gewünscht: eine .exe
+// herunterladen, danach entsteht automatisch ein Ordner mit Excel-Datei,
+// Firmendaten und Logos direkt daneben.
+//
+// electron-builders "portable"-Windows-Build entpackt sich beim Start selbst
+// in einen Temp-Ordner, um zu laufen — das ist normales, unsichtbares
+// Verhalten JEDER Single-Datei-.exe und betrifft nur Electrons eigene
+// Laufzeitdateien (Chromium etc.), nicht unsere Daten. Für genau diesen Fall
+// setzt der portable Launcher die Umgebungsvariable PORTABLE_EXECUTABLE_DIR
+// auf den Ordner, in dem die .exe tatsächlich liegt (nicht den Temp-Ordner) —
+// darüber legen wir unseren Datenordner an, sodass er stabil neben der .exe
+// bleibt, egal wohin sich die .exe selbst gerade entpackt hat.
 
 import { app } from "electron";
 import { existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 const FOLDER_NAME = "Qwui-Daten";
 
 let cachedDir = null;
 
+function resolveBaseDir() {
+  // Override für Tests/Entwicklung (siehe README) — im normalen Betrieb nicht
+  // gesetzt. Ist hier bereits der vollständige Zielordner, kein FOLDER_NAME
+  // mehr anhängen.
+  if (process.env.QWUI_DATA_DIR) {
+    return { dir: process.env.QWUI_DATA_DIR, appendFolderName: false };
+  }
+  // Von der portablen .exe selbst gesetzt: der Ordner, in dem die .exe-Datei
+  // liegt (nicht der Temp-Ordner, in den sie sich beim Start entpackt hat).
+  if (process.env.PORTABLE_EXECUTABLE_DIR) {
+    return { dir: process.env.PORTABLE_EXECUTABLE_DIR, appendFolderName: true };
+  }
+  // Fallback (z.B. unpacked-Build ohne portable-Wrapper, oder "npm run dev"):
+  // Ordner neben der tatsächlichen .exe.
+  return { dir: dirname(app.getPath("exe")), appendFolderName: true };
+}
+
 export function getDataDir() {
   if (cachedDir) return cachedDir;
-  // Override für Tests/Entwicklung (siehe README) — im normalen Betrieb nicht
-  // gesetzt, dann immer der stabile Documents-Pfad.
-  const base = process.env.QWUI_DATA_DIR || app.getPath("documents");
-  const dir = process.env.QWUI_DATA_DIR ? base : join(base, FOLDER_NAME);
+  const { dir: base, appendFolderName } = resolveBaseDir();
+  const dir = appendFolderName ? join(base, FOLDER_NAME) : base;
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }

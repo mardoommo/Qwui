@@ -386,7 +386,9 @@ erneut ausführen.
 
 ### Wo die Daten liegen
 
-Beim ersten Start wird `Dokumente\Qwui-Daten\` angelegt, darin:
+**Direkt neben der .exe-Datei** — nur eine Datei herunterladen, doppelklicken,
+fertig. Beim ersten Start wird dort automatisch ein Ordner `Qwui-Daten\`
+angelegt (im selben Verzeichnis, in dem die `Qwui.exe` liegt), darin:
 
 - **`Qwui-Daten.xlsx`** — die eigentliche Datenbank, zwei Sheets:
   - **"Kunden"**: alphabetisch sortiert, direkt in Excel bearbeitbar (Änderungen
@@ -406,10 +408,16 @@ Orange = offen, Zahlungsfrist noch nicht abgelaufen, Rot = offen und überfälli
 (> 30 Tage, dieselbe Frist wie auf der Quittung selbst).
 
 **Backup-Empfehlung:** Da die Daten (anders als bei der Web-Version mit D1) nur
-lokal auf diesem einen Rechner liegen, empfiehlt sich eine regelmässige Kopie von
-`Dokumente\Qwui-Daten\` an einen zweiten Ort (externe Platte, Cloud-Ordner). Die
+lokal auf diesem einen Rechner liegen, empfiehlt sich eine regelmässige Kopie des
+`Qwui-Daten\`-Ordners an einen zweiten Ort (externe Platte, Cloud-Ordner). Die
 App legt bei jedem Speichern selbst zusätzlich eine rollierende
 `Qwui-Daten.xlsx.bak`-Sicherung an.
+
+**Verschieben der .exe:** Liegt die `Qwui.exe` z. B. auf einem USB-Stick oder wird
+in einen anderen Ordner verschoben, wandert der `Qwui-Daten\`-Ordner beim nächsten
+Start automatisch mit — die App findet ihre Daten immer relativ zur eigenen
+.exe-Datei (technisch über die von electron-builders portablem Windows-Build
+gesetzte Umgebungsvariable `PORTABLE_EXECUTABLE_DIR`).
 
 **Bekannte Einschränkung:** Ist die Excel-Datei gerade in Microsoft Excel selbst
 geöffnet, kann die App nicht speichern (Windows-Dateisperre) — sie meldet das
