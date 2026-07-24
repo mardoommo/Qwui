@@ -3,3 +3,8 @@ dist/
 .dev.vars
 .DS_Store
 *.log
+
+# Desktop-Version (Electron)
+desktop/node_modules/
+desktop/dist/
+desktop/release/

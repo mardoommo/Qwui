@@ -24,6 +24,7 @@ eingerichtete, live erreichbare App" durch.
 12. [Sicherheit](#12-sicherheit)
 13. [Updates & weitere Deployments](#13-updates--weitere-deployments)
 14. [Troubleshooting](#14-troubleshooting)
+15. [Desktop-Version (Windows .exe)](#15-desktop-version-windows-exe)
 
 ---
 
@@ -340,3 +341,77 @@ verwendet wird und die D1-Bindung (Abschnitt 7) korrekt eingerichtet ist. Es gib
 keinen lokalen Fallback-Speicher — ohne funktionierende D1-Bindung schlägt jedes
 Speichern und Laden fehl (sichtbar als Fehler in der Browser-Konsole), Eingaben
 gehen dann nach einem Neuladen der Seite verloren.
+
+## 15. Desktop-Version (Windows .exe)
+
+Neben der gehosteten Web-App gibt es eine eigenständige Windows-Version mit
+identischem Funktionsumfang (Firma, Kunden, Quittungen/Rechnungen inkl.
+QR-Rechnung, PDF-Erzeugung, Buchhaltung inkl. Mahnwesen) — läuft komplett offline,
+**ohne Installation**, und speichert alle Daten lokal in einer Excel-Datei statt in
+Cloudflare D1. Technisch ein zweites, kleines Teilprojekt in `desktop/`
+(Electron), das dieselbe React-Oberfläche lädt wie die Web-App — nur der
+Speicher-Adapter ist ausgetauscht (`src/electronStorage.js` statt
+`src/apiStorage.js`, automatisch erkannt in `src/main.jsx`).
+
+### Bauen
+
+```bash
+npm install
+npm run build          # Web-App im Projekt-Root bauen (dist/)
+cd desktop
+npm install
+npm run dist            # kopiert dist/ hinein und erzeugt die portable .exe
+```
+
+Die fertige `Qwui-<Version>.exe` liegt danach in `desktop/release/`. Einfach
+doppelklicken — kein Installer, keine Admin-Rechte nötig. Da die .exe nicht mit
+einem kostenpflichtigen Zertifikat signiert ist, zeigt Windows beim ersten Start
+die SmartScreen-Warnung "Windows hat den PC geschützt" — **weitere Informationen**
+→ **Trotzdem ausführen** ist normal und kein Fehler.
+
+Für die Entwicklung: `npm run dev` in `desktop/` startet Electron gegen den
+laufenden Vite-Dev-Server (`npm run dev` im Projekt-Root muss dafür parallel
+laufen) statt gegen den gebauten `dist/`-Ordner.
+
+**Windows-Entwicklermodus nötig zum Bauen:** `npm run dist` lädt u. a. das
+Cross-Platform-Tool `winCodeSign` herunter, das intern macOS-Symlinks enthält.
+Ohne aktivierten Windows-Entwicklermodus (oder ohne Ausführung als
+Administrator) schlägt allein das Entpacken dieses Tools mit "Cannot create
+symbolic link" fehl — die eigentliche App wird davon nicht beeinträchtigt
+(`desktop/release/win-unpacked/Qwui.exe` funktioniert bereits einwandfrei),
+nur der letzte Schritt (Verpacken zu einer einzelnen portablen .exe-Datei)
+bricht ab. Fix: **Einstellungen → Datenschutz und Sicherheit → Für
+Entwickler → Entwicklermodus** einmalig aktivieren, dann `npm run dist`
+erneut ausführen.
+
+### Wo die Daten liegen
+
+Beim ersten Start wird `Dokumente\Qwui-Daten\` angelegt, darin:
+
+- **`Qwui-Daten.xlsx`** — die eigentliche Datenbank, zwei Sheets:
+  - **"Kunden"**: alphabetisch sortiert, direkt in Excel bearbeitbar (Änderungen
+    an Name/Adresse/etc. wirken sich beim nächsten App-Start aus).
+  - **"Zahlungen"**: gruppiert nach Kunde, innerhalb jeder Gruppe chronologisch
+    (neueste unten). Die sichtbaren Spalten (Betrag, Status mit Ampelfarbe,
+    Fälligkeit, …) sind **nur zur Anzeige** — massgeblich ist die letzte Spalte
+    "Rohdaten", die bei jedem Speichern aus der App neu geschrieben wird. Hand-
+    Änderungen an den übrigen Spalten in dieser Sheet werden beim nächsten
+    Speichern aus der App wieder überschrieben.
+- **`firma.json`** — Firmendaten (inkl. Logo), separat von den zwei Excel-Sheets.
+- **`logos/`** — hochgeladene Firmenlogos als eigene Bilddateien (Excel-Zellen
+  können keine grossen Base64-Bilder fassen).
+
+**Ampel-Farben** in der Spalte "Zahlungsstatus": Grün = bezahlt/Direktzahlung,
+Orange = offen, Zahlungsfrist noch nicht abgelaufen, Rot = offen und überfällig
+(> 30 Tage, dieselbe Frist wie auf der Quittung selbst).
+
+**Backup-Empfehlung:** Da die Daten (anders als bei der Web-Version mit D1) nur
+lokal auf diesem einen Rechner liegen, empfiehlt sich eine regelmässige Kopie von
+`Dokumente\Qwui-Daten\` an einen zweiten Ort (externe Platte, Cloud-Ordner). Die
+App legt bei jedem Speichern selbst zusätzlich eine rollierende
+`Qwui-Daten.xlsx.bak`-Sicherung an.
+
+**Bekannte Einschränkung:** Ist die Excel-Datei gerade in Microsoft Excel selbst
+geöffnet, kann die App nicht speichern (Windows-Dateisperre) — sie meldet das
+sichtbar im Banner oben, statt die Änderung stillschweigend zu verlieren. Excel
+schliessen und erneut versuchen.

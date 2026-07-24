@@ -143,6 +143,10 @@ export default function ReceiptApp() {
   const [tab, setTab] = useState("new");
   const [mode, setMode] = useState("form"); // 'form' | 'preview'
   const [saveStatus, setSaveStatus] = useState("");
+  // Sichtbarer Speicher-/Ladefehler (z.B. Excel-Datei in der Desktop-Version
+  // gerade in echtem Excel geöffnet) — bei D1 kam das kaum vor, war deshalb
+  // bisher nur ein stiller console.error.
+  const [persistError, setPersistError] = useState("");
 
   const [company, setCompany] = useState(emptyCompany);
   const [companyDraft, setCompanyDraft] = useState(emptyCompany);
@@ -163,6 +167,7 @@ export default function ReceiptApp() {
 
   useEffect(() => {
     (async () => {
+      let loadFailed = false;
       try {
         const c = await window.storage.get(KEYS.company);
         if (c && c.value) {
@@ -170,15 +175,29 @@ export default function ReceiptApp() {
           setCompany(parsed);
           setCompanyDraft(parsed);
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error("Laden der Firmendaten fehlgeschlagen", e);
+        loadFailed = true;
+      }
       try {
         const cu = await window.storage.get(KEYS.customers);
         if (cu && cu.value) setCustomers(JSON.parse(cu.value));
-      } catch (e) {}
+      } catch (e) {
+        console.error("Laden der Kunden fehlgeschlagen", e);
+        loadFailed = true;
+      }
       try {
         const r = await window.storage.get(KEYS.receipts);
         if (r && r.value) setReceipts(JSON.parse(r.value));
-      } catch (e) {}
+      } catch (e) {
+        console.error("Laden der Quittungen fehlgeschlagen", e);
+        loadFailed = true;
+      }
+      if (loadFailed) {
+        setPersistError(
+          "Laden fehlgeschlagen — möglicherweise ist die Datenquelle gerade nicht erreichbar (z.B. Excel-Datei in Excel geöffnet)."
+        );
+      }
       setLoaded(true);
     })();
   }, []);
@@ -187,8 +206,10 @@ export default function ReceiptApp() {
     setter(value);
     try {
       await window.storage.set(key, JSON.stringify(value), false);
+      setPersistError("");
     } catch (e) {
       console.error("Speichern fehlgeschlagen", e);
+      setPersistError(`Speichern fehlgeschlagen: ${e.message || "unbekannter Fehler"}`);
     }
   }
 
@@ -595,6 +616,12 @@ export default function ReceiptApp() {
           @page { size: A4; margin: 0; }
         }
       `}</style>
+
+      {persistError && (
+        <div className="no-print" style={styles.persistErrorBanner}>
+          {persistError}
+        </div>
+      )}
 
       {mode === "form" && (
         <div style={styles.shell}>
@@ -1408,6 +1435,19 @@ function ConfirmDeleteButton({ onConfirm, label = "Löschen" }) {
 
 const styles = {
   loadingWrap: { display: "flex", justifyContent: "center", alignItems: "center", height: 200 },
+  persistErrorBanner: {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 1000,
+    background: "#B00020",
+    color: "#fff",
+    textAlign: "center",
+    padding: "8px 12px",
+    fontSize: 12,
+    fontWeight: 600,
+  },
   appWrap: { minHeight: "100vh", background: "#FAFAF8" },
   shell: { display: "flex", minHeight: "100vh" },
   sidebar: {

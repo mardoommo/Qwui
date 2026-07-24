@@ -1,0 +1,46 @@
+{
+  "name": "qwui-desktop",
+  "productName": "Qwui",
+  "version": "1.0.0",
+  "description": "Qwui Windows-Desktop-Version (Electron, lokale Excel-Datenbank)",
+  "private": true,
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "cross-env QWUI_DEV_SERVER_URL=http://localhost:5173 electron .",
+    "predist": "node scripts/copy-dist.js",
+    "dist": "electron-builder --win portable"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "ch.munot-informatik.qwui",
+    "productName": "Qwui",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.cjs",
+      "dataDir.js",
+      "companyStore.js",
+      "excelStore.js",
+      "logoCache.js",
+      "dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "portable"
+    },
+    "portable": {
+      "artifactName": "Qwui-${version}.exe"
+    }
+  }
+}
