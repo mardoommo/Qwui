@@ -20,6 +20,8 @@ import {
   Wallet,
   Share2,
   Upload,
+  Github,
+  Copyright,
 } from "lucide-react";
 
 const KEYS = {
@@ -609,6 +611,25 @@ export default function ReceiptApp() {
             <NavItem icon={Building2} label="Firma" active={tab === "company"} onClick={() => setTab("company")} />
             <NavItem icon={History} label="Verlauf" active={tab === "history"} onClick={() => setTab("history")} />
             <NavItem icon={Wallet} label="Buchhaltung" active={tab === "accounting"} onClick={() => setTab("accounting")} />
+
+            <div style={styles.sidebarFooter}>
+              <a
+                href="https://github.com/mardoommo/Qwui"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={styles.footerLink}
+              >
+                <Github size={14} /> GitHub
+              </a>
+              <a
+                href="https://munot-informatik.ch"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={styles.footerLink}
+              >
+                <Copyright size={14} /> Matthias Kubin
+              </a>
+            </div>
           </nav>
 
           <main style={{ ...styles.main, ...(tab === "accounting" ? { maxWidth: 880 } : {}) }}>
@@ -1406,6 +1427,22 @@ const styles = {
   },
   brandTitle: { fontWeight: 700, fontSize: 13, lineHeight: 1.1 },
   brandSub: { fontSize: 11, color: "#8B8F96", letterSpacing: "0.04em" },
+  sidebarFooter: {
+    marginTop: "auto",
+    paddingTop: 16,
+    display: "flex",
+    flexDirection: "column",
+    gap: 6,
+  },
+  footerLink: {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "6px 10px",
+    fontSize: 11,
+    color: "#8B8F96",
+    textDecoration: "none",
+  },
   navBtn: {
     display: "flex",
     alignItems: "center",
