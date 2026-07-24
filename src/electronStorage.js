@@ -5,7 +5,7 @@
 // Reiner Passthrough: die eigentliche Excel-/JSON-Logik läuft im
 // Electron-Hauptprozess (desktop/excelStore.js, desktop/companyStore.js), da nur
 // dort Dateisystemzugriff besteht. window.qwuiDesktopStorage wird vom
-// Preload-Skript (desktop/preload.js) per contextBridge bereitgestellt.
+// Preload-Skript (desktop/preload.cjs) per contextBridge bereitgestellt.
 
 export const storageShim = {
   async get(key, shared = false) {

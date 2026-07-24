@@ -66,7 +66,10 @@ export default function QrBillDocument({ receipt }) {
       currency: "CHF",
       debtor,
       referenceText: receipt.number,
-      message: `Quittung Nr. ${receipt.number}`,
+      // Diese Komponente wird nur angezeigt, wenn qrBillEnabled true ist (siehe
+      // App.jsx) — dann ist die Quittung noch unbezahlt und fungiert als
+      // Rechnung, siehe auch "Zusätzliche Informationen" weiter unten.
+      message: `Rechnung Nr. ${receipt.number}`,
     });
 
     QRCode.toDataURL(payload, {
