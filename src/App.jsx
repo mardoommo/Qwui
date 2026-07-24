@@ -323,6 +323,14 @@ export default function ReceiptApp() {
     if (editingReceiptId) {
       const existing = receipts.find((r) => r.id === editingReceiptId);
       const isQrBill = qrBillEnabled && isValidSwissIban(company.qrBill?.iban);
+      // War die Quittung vorher schon eine QR-Rechnung, bleibt ihr Bezahlt-Status
+      // erhalten. Wird sie beim Bearbeiten NEU zur QR-Rechnung (vorher
+      // Direktzahlung, deren "paid" immer true ist), muss sie als offen starten
+      // — sonst würde eine frisch in eine Rechnung umgewandelte Quittung den
+      // alten "bezahlt"-Wert der Direktzahlung übernehmen und fälschlich schon
+      // als bezahlt gelten, obwohl noch niemand die Rechnung beglichen hat.
+      const wasQrBill = !!existing.qrBillEnabled;
+      const paid = isQrBill ? (wasQrBill ? !!existing.paid : false) : true;
       const updated = {
         ...existing,
         date,
@@ -334,7 +342,7 @@ export default function ReceiptApp() {
         vatAmount,
         total,
         qrBillEnabled: isQrBill,
-        paid: isQrBill ? !!existing.paid : true,
+        paid,
         note,
         editedAt: new Date().toISOString(),
       };
