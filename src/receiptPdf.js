@@ -53,7 +53,9 @@ async function buildReceiptQrData(receipt) {
     currency: "CHF",
     debtor,
     referenceText: receipt.number,
-    message: `Quittung Nr. ${receipt.number}`,
+    // Nur an dieser Stelle relevant, wenn qrBillEnabled true ist (siehe oben) —
+    // dann ist die Quittung noch unbezahlt und fungiert als Rechnung.
+    message: `Rechnung Nr. ${receipt.number}`,
   });
 
   const creditorReference = buildCreditorReference(receipt.number);

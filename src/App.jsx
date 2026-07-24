@@ -19,6 +19,7 @@ import {
   MessageCircle,
   Wallet,
   Share2,
+  Upload,
 } from "lucide-react";
 
 const KEYS = {
@@ -34,6 +35,7 @@ const emptyCompany = {
   email: "",
   phone: "",
   vatNumber: "",
+  logoDataUrl: "",
   qrBill: { name: "", iban: "", street: "", houseNumber: "", postalCode: "", city: "", country: "CH" },
 };
 const emptyPerson = {
@@ -65,6 +67,32 @@ function personHasAddress(person) {
 
 function sanitizePhone(phone) {
   return (phone || "").replace(/[^\d]/g, "");
+}
+
+// Verkleinert ein hochgeladenes Bild auf maxDim (längste Seite) und liefert es
+// als PNG-data-URL zurück — hält die in D1 gespeicherte Firmendaten-Grösse
+// klein und vermeidet unnötig grosse PDFs, ohne Transparenz zu verlieren.
+function resizeImageFile(file, maxDim = 300) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Datei konnte nicht gelesen werden"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Bild konnte nicht gelesen werden"));
+      img.onload = () => {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const width = Math.max(1, Math.round(img.width * scale));
+        const height = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/png"));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 function uid() {
@@ -100,6 +128,12 @@ function formatDateDE(iso) {
   if (!iso) return "";
   const [y, m, d] = iso.split("-");
   return `${d}.${m}.${y}`;
+}
+
+// Mit aktivierter QR-Rechnung ist der Betrag noch nicht bezahlt und das
+// Dokument fungiert als Rechnung statt als Quittung für bereits erhaltenes Geld.
+function documentWord(receipt) {
+  return receipt.qrBillEnabled ? "Rechnung" : "Quittung";
 }
 
 export default function ReceiptApp() {
@@ -160,6 +194,39 @@ export default function ReceiptApp() {
     await persist(KEYS.company, companyDraft, setCompany);
     setSaveStatus("Firmendaten gespeichert");
     setTimeout(() => setSaveStatus(""), 2000);
+  }
+
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoError, setLogoError] = useState("");
+
+  async function handleLogoUpload(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // erlaubt erneutes Auswählen derselben Datei
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setLogoError("Bitte eine Bilddatei auswählen.");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setLogoError("Bild ist zu gross (max. 8 MB).");
+      return;
+    }
+    setLogoError("");
+    setLogoUploading(true);
+    try {
+      const dataUrl = await resizeImageFile(file, 300);
+      setCompanyDraft({ ...companyDraft, logoDataUrl: dataUrl });
+    } catch (err) {
+      console.error("Logo-Verarbeitung fehlgeschlagen", err);
+      setLogoError("Logo konnte nicht verarbeitet werden.");
+    } finally {
+      setLogoUploading(false);
+    }
+  }
+
+  function removeLogo() {
+    setCompanyDraft({ ...companyDraft, logoDataUrl: "" });
+    setLogoError("");
   }
 
   async function addCustomer() {
@@ -347,18 +414,19 @@ export default function ReceiptApp() {
 
   function sendMail() {
     if (!currentReceipt) return;
+    const word = documentWord(currentReceipt);
     const to = currentReceipt.customer.email || "";
     const subject = encodeURIComponent(
-      `Quittung Nr. ${currentReceipt.number} – ${currentReceipt.company.name || ""}`
+      `${word} Nr. ${currentReceipt.number} – ${currentReceipt.company.name || ""}`
     );
     const bodyLines = [
       `Guten Tag ${currentReceipt.customer.name}`,
       "",
-      `Anbei erhalten Sie die Quittung Nr. ${currentReceipt.number} vom ${formatDateDE(
+      `Anbei erhalten Sie die ${word} Nr. ${currentReceipt.number} vom ${formatDateDE(
         currentReceipt.date
       )} über CHF ${chf(currentReceipt.total)}.`,
       "",
-      "Bitte fügen Sie die PDF-Quittung dieser E-Mail als Anhang bei",
+      `Bitte fügen Sie die PDF-${word} dieser E-Mail als Anhang bei`,
       "(Button „Drucken / Als PDF speichern“ → als PDF sichern → hier anhängen).",
       "",
       "Freundliche Grüsse",
@@ -371,7 +439,7 @@ export default function ReceiptApp() {
   function printReceipt() {
     const previousTitle = document.title;
     if (currentReceipt) {
-      document.title = `Quittung ${currentReceipt.number} – ${currentReceipt.customer.name || ""}`.trim();
+      document.title = `${documentWord(currentReceipt)} ${currentReceipt.number} – ${currentReceipt.customer.name || ""}`.trim();
     }
     const restoreTitle = () => {
       document.title = previousTitle;
@@ -406,7 +474,7 @@ export default function ReceiptApp() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Quittung_${currentReceipt.number}.pdf`;
+      a.download = `${documentWord(currentReceipt)}_${currentReceipt.number}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -426,14 +494,15 @@ export default function ReceiptApp() {
     if (!currentReceipt) return;
     setSharing(true);
     try {
+      const word = documentWord(currentReceipt);
       const pdfBytes = await buildReceiptPdfBytes(currentReceipt);
-      const file = new File([pdfBytes], `Quittung_${currentReceipt.number}.pdf`, {
+      const file = new File([pdfBytes], `${word}_${currentReceipt.number}.pdf`, {
         type: "application/pdf",
       });
       await navigator.share({
         files: [file],
-        title: `Quittung Nr. ${currentReceipt.number}`,
-        text: `Quittung Nr. ${currentReceipt.number} – CHF ${chf(currentReceipt.total)}`,
+        title: `${word} Nr. ${currentReceipt.number}`,
+        text: `${word} Nr. ${currentReceipt.number} – CHF ${chf(currentReceipt.total)}`,
       });
     } catch (err) {
       if (err.name !== "AbortError") {
@@ -446,8 +515,9 @@ export default function ReceiptApp() {
   }
 
   function buildWhatsAppText(receipt) {
+    const word = documentWord(receipt);
     const lines = [
-      `*Quittung Nr. ${receipt.number}*`,
+      `*${word} Nr. ${receipt.number}*`,
       receipt.company.name || "",
       "",
       `Datum: ${formatDateDE(receipt.date)}`,
@@ -466,7 +536,12 @@ export default function ReceiptApp() {
       lines.push(`*Total: CHF ${chf(receipt.total)}*`);
     }
     if (receipt.note) lines.push("", `Notiz: ${receipt.note}`);
-    lines.push("", "Betrag dankend erhalten.");
+    lines.push(
+      "",
+      receipt.qrBillEnabled
+        ? "Zahlbar per beiliegendem Einzahlungsschein innert 30 Tagen."
+        : "Betrag dankend erhalten."
+    );
     if (receipt.company.name) lines.push(receipt.company.name);
     return lines.join("\n");
   }
@@ -845,6 +920,40 @@ export default function ReceiptApp() {
               <div style={styles.panel}>
                 <Eyebrow>03 — Firma</Eyebrow>
                 <h1 style={styles.h1}>Firmendaten</h1>
+
+                <div style={{ marginBottom: 28, maxWidth: 420 }}>
+                  <div style={styles.fieldLabel}>Firmenlogo</div>
+                  <div style={{ fontSize: 12, color: "#8B8F96", marginBottom: 12 }}>
+                    Erscheint oben links auf Quittung/Rechnung (PDF und Druck). Ein Bild mit
+                    wenig Rand wirkt am besten, PNG mit transparentem Hintergrund wird unterstützt.
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    {companyDraft.logoDataUrl ? (
+                      <img src={companyDraft.logoDataUrl} alt="Firmenlogo" style={styles.logoPreview} />
+                    ) : (
+                      <div style={styles.logoPlaceholder}>Kein Logo</div>
+                    )}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      <label style={{ ...styles.secondaryBtn, opacity: logoUploading ? 0.6 : 1 }}>
+                        <Upload size={14} /> {logoUploading ? "Lade hoch…" : "Logo hochladen"}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleLogoUpload}
+                          disabled={logoUploading}
+                          style={{ display: "none" }}
+                        />
+                      </label>
+                      {companyDraft.logoDataUrl && (
+                        <button type="button" onClick={removeLogo} style={styles.linkBtn}>
+                          Logo entfernen
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {logoError && <div style={styles.hint}>{logoError}</div>}
+                </div>
+
                 <div style={{ display: "grid", gap: 8, maxWidth: 420 }}>
                   <input
                     placeholder="Firmenname"
@@ -1112,18 +1221,23 @@ function ReceiptDocument({ receipt }) {
   return (
     <div className="print-area" style={styles.document}>
       <div style={styles.docHeader}>
-        <div>
-          <div style={styles.docCompanyName}>{receipt.company.name || "Firma"}</div>
-          <div style={styles.docMuted}>{receipt.company.address}</div>
-          <div style={styles.docMuted}>{receipt.company.zipCity}</div>
-          <div style={styles.docMuted}>{receipt.company.email}</div>
-          <div style={styles.docMuted}>{receipt.company.phone}</div>
-          {receipt.company.vatNumber && (
-            <div style={styles.docMuted}>MWST-Nr. {receipt.company.vatNumber}</div>
+        <div style={styles.docHeaderLeft}>
+          {receipt.company.logoDataUrl && (
+            <img src={receipt.company.logoDataUrl} alt="" style={styles.docLogo} />
           )}
+          <div>
+            <div style={styles.docCompanyName}>{receipt.company.name || "Firma"}</div>
+            <div style={styles.docMuted}>{receipt.company.address}</div>
+            <div style={styles.docMuted}>{receipt.company.zipCity}</div>
+            <div style={styles.docMuted}>{receipt.company.email}</div>
+            <div style={styles.docMuted}>{receipt.company.phone}</div>
+            {receipt.company.vatNumber && (
+              <div style={styles.docMuted}>MWST-Nr. {receipt.company.vatNumber}</div>
+            )}
+          </div>
         </div>
         <div style={{ textAlign: "right" }}>
-          <div style={styles.docTitle}>QUITTUNG</div>
+          <div style={styles.docTitle}>{receipt.qrBillEnabled ? "RECHNUNG" : "QUITTUNG"}</div>
           <div className="mono" style={styles.docNumber}>Nr. {receipt.number}</div>
           <div className="mono" style={styles.docMuted}>{formatDateDE(receipt.date)}</div>
         </div>
@@ -1500,6 +1614,24 @@ const styles = {
   empty: { fontSize: 13, color: "#8B8F96", fontStyle: "italic", padding: "20px 0" },
   hint: { fontSize: 12, color: "#B5480C", background: "#FDF3EC", padding: "8px 10px", marginTop: 8 },
   savedMsg: { fontSize: 12, color: "#1D7A3C" },
+  logoPreview: {
+    width: 90,
+    height: 60,
+    objectFit: "contain",
+    border: "1px solid #E4E5E7",
+    background: "#fff",
+    padding: 6,
+  },
+  logoPlaceholder: {
+    width: 90,
+    height: 60,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    border: "1px dashed #C7CACF",
+    color: "#B4B7BC",
+    fontSize: 11,
+  },
   previewWrap: { padding: "40px 20px" },
   previewToolbar: {
     maxWidth: 640,
@@ -1518,6 +1650,8 @@ const styles = {
     padding: 40,
   },
   docHeader: { display: "flex", justifyContent: "space-between" },
+  docHeaderLeft: { display: "flex", alignItems: "flex-start", gap: 12 },
+  docLogo: { maxWidth: 90, maxHeight: 56, objectFit: "contain" },
   docCompanyName: { fontWeight: 700, fontSize: 15 },
   docMuted: { fontSize: 12, color: "#70747C" },
   docTitle: { fontSize: 20, fontWeight: 700, letterSpacing: "0.04em", color: "#E30613" },

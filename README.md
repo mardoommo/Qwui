@@ -32,7 +32,8 @@ eingerichtete, live erreichbare App" durch.
 - **Quittungen erstellen**: Positionen mit Beschreibung/Betrag, optional 8.1 %
   Mehrwertsteuer, fortlaufende Quittungsnummer.
 - **Kundenverwaltung**: Kunden mit strukturierter Adresse speichern und wiederverwenden.
-- **Firmendaten**: Name, Adresse, Kontakt, MWST-Nummer, QR-Rechnungs-Konto (IBAN).
+- **Firmendaten**: Name, Adresse, Kontakt, MWST-Nummer, QR-Rechnungs-Konto (IBAN),
+  optional ein Firmenlogo (erscheint oben links auf Quittung/Rechnung).
 - **QR-Einzahlungsschein**: Schweizer QR-Rechnung nach aktueller Spezifikation
   (strukturierte Adresse, ISO-11649-Referenz), funktioniert mit jeder normalen
   Schweizer/Liechtensteiner IBAN — keine QR-IBAN nötig.
@@ -196,7 +197,9 @@ bestehendem Konto), lässt sich mit dem Passwortschutz kombinieren:
 Nach dem Login (Passwort aus Schritt 8) einmalig:
 
 1. **Firma** (Sidebar) → Firmenname, Adresse, Kontakt, ggf. MWST-Nummer eintragen
-   → **Speichern**.
+   → **Speichern**. Optional ein **Firmenlogo hochladen** (erscheint danach oben
+   links auf jeder Quittung/Rechnung, PDF und Druck) — ein Bild mit wenig Rand
+   wirkt am besten, PNG mit transparentem Hintergrund wird unterstützt.
 2. Falls QR-Rechnungen gewünscht: im selben Tab unter "QR-Rechnung" die
    Zahlungsempfänger-Adresse und die IBAN eintragen (Validierung erfolgt live,
    grüner Haken = gültige Schweizer/Liechtensteiner IBAN).
@@ -211,7 +214,9 @@ Nach dem Login (Passwort aus Schritt 8) einmalig:
 2. Optional **Mehrwertsteuerpflichtig** aktivieren (Normalsatz 8.1 %) — Netto/MWST/
    Total werden automatisch ausgerechnet.
 3. Optional **Bezahlbar per Rechnung (QR-Einzahlungsschein)** aktivieren (setzt eine
-   gültige IBAN unter Firma voraus).
+   gültige IBAN unter Firma voraus). Ist diese Option aktiv, heisst das Dokument
+   auf Bildschirm, PDF und Druck **"RECHNUNG"** statt **"QUITTUNG"** — schliesslich
+   ist der Betrag noch nicht bezahlt, sondern erst fällig.
 4. Ab CHF 400 Total ist laut OR Art. 958f die Adresse des Käufers gesetzlich
    vorgeschrieben — die App weist darauf hin, wenn sie fehlt.
 5. **Quittung erstellen →** — Nummer wird automatisch fortlaufend vergeben.

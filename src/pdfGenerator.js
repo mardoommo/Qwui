@@ -68,6 +68,46 @@ function daysBetweenISO(fromISO, toISO) {
   return Math.max(0, Math.round((to - from) / 86400000));
 }
 
+function parseDataUrl(dataUrl) {
+  const match = /^data:([^;]+);base64,([\s\S]*)$/.exec(dataUrl || "");
+  if (!match) return null;
+  const [, mime, base64] = match;
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return { mime, bytes };
+}
+
+// Bettet ein hochgeladenes Firmenlogo (data: URL) ins PDF ein. Gibt null
+// zurück, falls kein Logo gesetzt ist oder das Format nicht unterstützt wird
+// (statt die PDF-Erzeugung mit einem Fehler abzubrechen).
+async function embedLogo(pdfDoc, logoDataUrl) {
+  if (!logoDataUrl) return null;
+  const parsed = parseDataUrl(logoDataUrl);
+  if (!parsed) return null;
+  try {
+    if (parsed.mime === "image/png") return await pdfDoc.embedPng(parsed.bytes);
+    if (parsed.mime === "image/jpeg" || parsed.mime === "image/jpg") return await pdfDoc.embedJpg(parsed.bytes);
+  } catch (e) {
+    console.error("Logo konnte nicht ins PDF eingebettet werden", e);
+  }
+  return null;
+}
+
+// Zeichnet das Firmenlogo oben links (falls vorhanden) und liefert die
+// x-Position zurück, ab der der Firmen-Textblock beginnen soll — mit Logo
+// rutscht der Text nach rechts, um Platz zu machen.
+function drawLogoAndGetTextX(page, logoImage, x, topY) {
+  if (!logoImage) return x;
+  const maxW = mm(32);
+  const maxH = mm(14);
+  const scale = Math.min(maxW / logoImage.width, maxH / logoImage.height);
+  const w = logoImage.width * scale;
+  const h = logoImage.height * scale;
+  page.drawImage(logoImage, { x, y: topY - h, width: w, height: h });
+  return x + w + mm(4);
+}
+
 export async function generateReceiptPdf(receipt, qrPngBytes) {
   const pdfDoc = await PDFDocument.create();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -85,18 +125,22 @@ export async function generateReceiptPdf(receipt, qrPngBytes) {
     page.drawLine({ start: { x: x1, y: yPos }, end: { x: x2, y: yPos }, thickness: width, color });
   }
 
-  // ---- Kopfzeile: Firma links, "QUITTUNG" rechts ----
+  // ---- Kopfzeile: Logo + Firma links, Titel rechts ----
   const company = receipt.company || {};
+  const logoImage = await embedLogo(pdfDoc, company.logoDataUrl);
+  const textX = drawLogoAndGetTextX(page, logoImage, MARGIN, y);
   let leftY = y;
-  text(company.name || "Firma", MARGIN, leftY, { size: 12, f: fontBold });
+  text(company.name || "Firma", textX, leftY, { size: 12, f: fontBold });
   leftY -= 14;
   [company.address, company.zipCity, company.email, company.phone].filter(Boolean).forEach((l) => {
-    text(l, MARGIN, leftY, { size: 8.5, color: COLOR.gray });
+    text(l, textX, leftY, { size: 8.5, color: COLOR.gray });
     leftY -= 11;
   });
 
   const rightX = PAGE_W - MARGIN;
-  const titleStr = "QUITTUNG";
+  // Mit aktivierter QR-Rechnung ist die Quittung noch nicht bezahlt und
+  // fungiert als Rechnung — Titel entsprechend anpassen.
+  const titleStr = receipt.qrBillEnabled ? "RECHNUNG" : "QUITTUNG";
   const titleWidth = fontBold.widthOfTextAtSize(titleStr, 17);
   text(titleStr, rightX - titleWidth, y - 2, { size: 17, f: fontBold, color: COLOR.red });
   const nrStr = `Nr. ${receipt.number}`;
@@ -216,13 +260,15 @@ export async function generateMahnungPdf(receipt, qrPngBytes) {
     page.drawLine({ start: { x: x1, y: yPos }, end: { x: x2, y: yPos }, thickness: width, color });
   }
 
-  // ---- Kopfzeile: Firma links, "MAHNUNG" rechts ----
+  // ---- Kopfzeile: Logo + Firma links, "MAHNUNG" rechts ----
   const company = receipt.company || {};
+  const logoImage = await embedLogo(pdfDoc, company.logoDataUrl);
+  const textX = drawLogoAndGetTextX(page, logoImage, MARGIN, y);
   let leftY = y;
-  text(company.name || "Firma", MARGIN, leftY, { size: 12, f: fontBold });
+  text(company.name || "Firma", textX, leftY, { size: 12, f: fontBold });
   leftY -= 14;
   [company.address, company.zipCity, company.email, company.phone].filter(Boolean).forEach((l) => {
-    text(l, MARGIN, leftY, { size: 8.5, color: COLOR.gray });
+    text(l, textX, leftY, { size: 8.5, color: COLOR.gray });
     leftY -= 11;
   });
 
@@ -408,7 +454,7 @@ async function drawQrSlip(pdfDoc, page, receipt, qrPngBytes, { font, fontBold })
   py -= 15;
   label("Zusätzliche Informationen", PAY_RIGHT_X, py);
   py -= 8;
-  t(`Quittung Nr. ${receipt.number}`, PAY_RIGHT_X, py, { size: 8 });
+  t(`Rechnung Nr. ${receipt.number}`, PAY_RIGHT_X, py, { size: 8 });
   py -= 15;
   label("Zahlbar durch", PAY_RIGHT_X, py);
   py -= 8;

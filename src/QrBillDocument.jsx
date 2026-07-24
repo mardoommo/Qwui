@@ -197,7 +197,7 @@ export default function QrBillDocument({ receipt }) {
 
           <div style={styles.fieldBlock}>
             <div style={styles.label}>Zusätzliche Informationen</div>
-            <div style={styles.value}>Quittung Nr. {receipt.number}</div>
+            <div style={styles.value}>Rechnung Nr. {receipt.number}</div>
           </div>
 
           <div style={styles.fieldBlock}>
