@@ -22,7 +22,15 @@ import {
   Upload,
   Github,
   Copyright,
+  RefreshCw,
+  Download,
+  AlertTriangle,
 } from "lucide-react";
+
+// Aktuelle Version des Backup-Dateiformats (siehe exportAllData/handleImportFileSelect).
+// Rein informativ beim Import — kein harter Kompatibilitäts-Check, damit auch
+// künftige, abwärtskompatible Versionen weiterhin importiert werden können.
+const BACKUP_SCHEMA_VERSION = 1;
 
 const KEYS = {
   company: "company-info",
@@ -250,6 +258,88 @@ export default function ReceiptApp() {
   function removeLogo() {
     setCompanyDraft({ ...companyDraft, logoDataUrl: "" });
     setLogoError("");
+  }
+
+  // ---- Backup: kompletter Datenexport/-import (Firma + Kunden + Quittungen) ----
+  // Funktioniert identisch in Web-App und Desktop-Version, da beide dieselbe
+  // window.storage-Schnittstelle nutzen — hier wird nur mit dem bereits
+  // geladenen React-State gearbeitet, unabhängig vom Speicherort. Damit lässt
+  // sich der aktuelle Stand der einen Version exportieren und in der anderen
+  // (oder als reines Backup) wieder importieren.
+  const [importPreview, setImportPreview] = useState(null); // geparste Datei, wartet auf Bestätigung
+  const [importError, setImportError] = useState("");
+  const [importing, setImporting] = useState(false);
+
+  function exportAllData() {
+    const payload = {
+      schemaVersion: BACKUP_SCHEMA_VERSION,
+      exportedAt: new Date().toISOString(),
+      company,
+      customers,
+      receipts,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Qwui-Backup_${todayISO()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+
+  function handleImportFileSelect(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // erlaubt erneutes Auswählen derselben Datei
+    if (!file) return;
+    setImportError("");
+    setImportPreview(null);
+    const reader = new FileReader();
+    reader.onerror = () => setImportError("Datei konnte nicht gelesen werden.");
+    reader.onload = () => {
+      let parsed;
+      try {
+        parsed = JSON.parse(reader.result);
+      } catch (err) {
+        setImportError("Datei ist kein gültiges JSON.");
+        return;
+      }
+      const looksValid =
+        parsed &&
+        typeof parsed === "object" &&
+        typeof parsed.company === "object" &&
+        Array.isArray(parsed.customers) &&
+        Array.isArray(parsed.receipts);
+      if (!looksValid) {
+        setImportError("Datei hat kein gültiges Qwui-Backup-Format.");
+        return;
+      }
+      setImportPreview(parsed);
+    };
+    reader.readAsText(file);
+  }
+
+  async function confirmImport() {
+    if (!importPreview) return;
+    setImporting(true);
+    try {
+      const importedCompany = importPreview.company || emptyCompany;
+      await persist(KEYS.company, importedCompany, setCompany);
+      setCompanyDraft(importedCompany);
+      await persist(KEYS.customers, importPreview.customers || [], setCustomers);
+      await persist(KEYS.receipts, importPreview.receipts || [], setReceipts);
+      setImportPreview(null);
+      setSaveStatus("Backup importiert");
+      setTimeout(() => setSaveStatus(""), 3000);
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  function cancelImport() {
+    setImportPreview(null);
+    setImportError("");
   }
 
   async function addCustomer() {
@@ -646,6 +736,7 @@ export default function ReceiptApp() {
             <NavItem icon={Building2} label="Firma" active={tab === "company"} onClick={() => setTab("company")} />
             <NavItem icon={History} label="Verlauf" active={tab === "history"} onClick={() => setTab("history")} />
             <NavItem icon={Wallet} label="Buchhaltung" active={tab === "accounting"} onClick={() => setTab("accounting")} />
+            <NavItem icon={RefreshCw} label="Backup" active={tab === "backup"} onClick={() => setTab("backup")} />
 
             <div style={styles.sidebarFooter}>
               <a
@@ -1184,6 +1275,73 @@ export default function ReceiptApp() {
                 <BuchhaltungTab receipts={receipts} onTogglePaid={togglePaid} />
               </div>
             )}
+
+            {tab === "backup" && (
+              <div style={styles.panel}>
+                <Eyebrow>06 — Backup</Eyebrow>
+                <h1 style={styles.h1}>Backup & Datenübertragung</h1>
+                <div style={{ fontSize: 13, color: "#5B5F66", marginBottom: 24, maxWidth: 480 }}>
+                  Exportiert Firma, alle Kunden und alle Quittungen/Rechnungen als eine
+                  einzelne Datei — z. B. um sie in die andere Qwui-Version zu übertragen
+                  (Web ↔ Windows), oder einfach als Sicherungskopie in einem
+                  Cloud-Speicher deiner Wahl (z. B. ProtonDrive, OneDrive) abzulegen.
+                </div>
+
+                <FieldGroup label="Exportieren">
+                  <button onClick={exportAllData} style={styles.secondaryBtn}>
+                    <Download size={14} /> Alle Daten exportieren
+                  </button>
+                </FieldGroup>
+
+                <FieldGroup label="Importieren">
+                  <div style={{ ...styles.hint, marginTop: 0, marginBottom: 12 }}>
+                    Achtung: Ein Import ersetzt Firma, alle Kunden und alle Quittungen
+                    vollständig durch den Inhalt der Backup-Datei — nicht rückgängig zu
+                    machen. Am besten vorher selbst ein aktuelles Backup exportieren.
+                  </div>
+                  <label style={{ ...styles.secondaryBtn, opacity: importing ? 0.6 : 1 }}>
+                    <Upload size={14} /> Backup-Datei auswählen
+                    <input
+                      type="file"
+                      accept="application/json,.json"
+                      onChange={handleImportFileSelect}
+                      disabled={importing}
+                      style={{ display: "none" }}
+                    />
+                  </label>
+                  {importError && <div style={styles.hint}>{importError}</div>}
+                </FieldGroup>
+
+                {importPreview && (
+                  <div style={styles.importPreviewBox}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                      <AlertTriangle size={16} color="#B5480C" />
+                      <strong style={{ fontSize: 13 }}>Backup-Datei bereit zum Import</strong>
+                    </div>
+                    <div style={{ fontSize: 12, color: "#5B5F66", marginBottom: 4 }}>
+                      Firma: <strong>{importPreview.company?.name || "(kein Name)"}</strong>
+                    </div>
+                    <div style={{ fontSize: 12, color: "#5B5F66", marginBottom: 4 }}>
+                      {importPreview.customers?.length || 0} Kunden,{" "}
+                      {importPreview.receipts?.length || 0} Quittungen/Rechnungen
+                    </div>
+                    {importPreview.exportedAt && (
+                      <div style={{ fontSize: 12, color: "#8B8F96", marginBottom: 12 }}>
+                        Exportiert am {formatDateDE(importPreview.exportedAt.slice(0, 10))}
+                      </div>
+                    )}
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button onClick={confirmImport} disabled={importing} style={styles.dangerBtnSmall}>
+                        {importing ? "Importiere…" : "Jetzt importieren (ersetzt alle Daten)"}
+                      </button>
+                      <button onClick={cancelImport} disabled={importing} style={styles.secondaryBtnSmall}>
+                        Abbrechen
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </main>
         </div>
       )}
@@ -1702,6 +1860,13 @@ const styles = {
   empty: { fontSize: 13, color: "#8B8F96", fontStyle: "italic", padding: "20px 0" },
   hint: { fontSize: 12, color: "#B5480C", background: "#FDF3EC", padding: "8px 10px", marginTop: 8 },
   savedMsg: { fontSize: 12, color: "#1D7A3C" },
+  importPreviewBox: {
+    marginTop: 8,
+    padding: 16,
+    maxWidth: 420,
+    border: "1px solid #F3D9C4",
+    background: "#FDF3EC",
+  },
   logoPreview: {
     width: 90,
     height: 60,

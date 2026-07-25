@@ -25,6 +25,7 @@ eingerichtete, live erreichbare App" durch.
 13. [Updates & weitere Deployments](#13-updates--weitere-deployments)
 14. [Troubleshooting](#14-troubleshooting)
 15. [Desktop-Version (Windows .exe)](#15-desktop-version-windows-exe)
+16. [Backup & Datenübertragung (Web ↔ Windows)](#16-backup--datenübertragung-web--windows)
 
 ---
 
@@ -45,6 +46,10 @@ eingerichtete, live erreichbare App" durch.
 - **Buchhaltung**: Monats-/Jahresübersicht, offene/bezahlte Beträge, Excel-Export.
 - **Zentrale Datenbank**: Alle Daten liegen in Cloudflare D1 — jedes Gerät sieht nach
   dem Login denselben, aktuellen Stand.
+- **Backup & Datenübertragung**: Ein Klick exportiert Firma, alle Kunden und alle
+  Quittungen/Rechnungen als eine einzelne JSON-Datei — für Backups im eigenen
+  Cloud-Speicher oder zur Übertragung zwischen Web- und Windows-Version (siehe
+  Abschnitt 16).
 - **Passwortschutz**: Echter, serverseitiger Schutz (Basic Auth via Cloudflare Pages
   Function), inkl. Rate-Limiting gegen Brute-Force.
 - **PWA**: Installierbar auf Desktop/Handy, mit Icon und Offline-Cache für die
@@ -427,3 +432,34 @@ gesetzte Umgebungsvariable `PORTABLE_EXECUTABLE_DIR`).
 geöffnet, kann die App nicht speichern (Windows-Dateisperre) — sie meldet das
 sichtbar im Banner oben, statt die Änderung stillschweigend zu verlieren. Excel
 schliessen und erneut versuchen.
+
+## 16. Backup & Datenübertragung (Web ↔ Windows)
+
+Tab **Backup** (in beiden Versionen identisch vorhanden) exportiert Firma, alle
+Kunden und alle Quittungen/Rechnungen als eine einzelne JSON-Datei
+(`Qwui-Backup_JJJJ-MM-TT.json`) und kann dieselbe Datei wieder importieren. Damit
+lassen sich drei Fälle abdecken, ohne eine echte bidirektionale Cloud-Synchronisation
+(Login-Popup, automatischer Merge) bauen zu müssen — bei einer einzelnen Firma pro
+Installation ist ein einfacher "Schnappschuss exportieren / importieren"-Ansatz
+zuverlässiger als ein automatischer Zwei-Wege-Abgleich mit Konfliktauflösung:
+
+- **Windows → Web**: In der Windows-App **Backup → Alle Daten exportieren**, die
+  JSON-Datei in der Web-App unter **Backup → Backup-Datei auswählen** importieren.
+  Praktisch z. B. für wöchentliches Übertragen, wenn hauptsächlich offline am
+  Windows-Rechner gearbeitet wird.
+- **Web → Windows**: Gleicher Weg umgekehrt — z. B. als Notfall-Wiederherstellung
+  auf einem neuen Windows-Rechner, falls die lokalen Daten dort verloren gehen.
+- **Reines Backup**: Die exportierte JSON-Datei regelmässig (z. B. monatlich) im
+  eigenen Cloud-Speicher ablegen (ProtonDrive, OneDrive, Google Drive, …) —
+  unabhängig von der App selbst, einfach eine normale Datei.
+
+**Wichtig — ein Import ersetzt vollständig:** Firma, alle Kunden und alle
+Quittungen werden beim Import komplett durch den Inhalt der Backup-Datei ersetzt,
+nicht zusammengeführt. Die App warnt davor direkt im Backup-Tab und zeigt vor dem
+eigentlichen Import eine Vorschau (Firmenname, Anzahl Kunden/Quittungen, Exportdatum)
+zur Kontrolle an. Am besten vor einem Import selbst nochmal ein aktuelles Backup der
+Zielversion ziehen, falls der Import rückgängig gemacht werden müsste.
+
+Die JSON-Datei enthält alle Daten unverschlüsselt im Klartext (inkl. Kundenadressen)
+— beim Ablegen in einem Cloud-Speicher gilt dessen übliche Verschlüsselung/Zugriffs-
+schutz, wie bei jeder anderen dort gespeicherten Datei auch.
